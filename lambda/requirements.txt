@@ -1,0 +1,2 @@
+# No external dependencies required for this simple redirect function
+# All required modules (json, logging, os) are part of Python standard library

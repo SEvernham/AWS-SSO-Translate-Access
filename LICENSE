@@ -1,0 +1,56 @@
+MIT License - Testing and Educational Use Only
+
+Copyright (c) 2026 IAM Identity Center Redirect Application
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+IMPORTANT DISCLAIMERS AND RESTRICTIONS:
+
+1. TESTING AND EDUCATIONAL USE ONLY: This software is provided for testing,
+   demonstration, and educational purposes only. It is NOT intended for
+   production use in any environment.
+
+2. NO PRODUCTION USE: This software MUST NOT be used in production environments,
+   with live user data, or in any business-critical applications.
+
+3. PROOF OF CONCEPT: This is a proof-of-concept implementation designed to
+   demonstrate IAM Identity Center integration patterns. It may not follow
+   all security best practices required for production systems.
+
+4. NO SECURITY GUARANTEES: While basic security practices have been followed,
+   this software has not undergone comprehensive security review and should
+   not be relied upon for secure authentication or authorization in production.
+
+5. AWS COSTS: Use of this software may incur AWS charges. Users are responsible
+   for understanding and managing any costs associated with AWS resources
+   created by this software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+ADDITIONAL DISCLAIMERS:
+
+- No warranty of functionality, security, or fitness for any purpose
+- No guarantee of compatibility with future AWS service changes
+- No support or maintenance commitments
+- Users assume all risks associated with deployment and use
+- This software may contain bugs, security vulnerabilities, or other issues
+- Always review and test thoroughly in isolated environments before any use
+- Consult with security professionals before implementing similar patterns
+
+By using this software, you acknowledge that you have read and understood
+these terms and agree to use this software solely for testing and educational
+purposes in non-production environments.

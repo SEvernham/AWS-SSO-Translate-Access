@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Workload account resources for IAM Identity Center redirect application'
+
+Parameters:
+  RedirectTargetURL:
+    Type: String
+    Description: 'Target URL for redirect (e.g., AWS Translate console)'
+    Default: 'https://us-east-1.console.aws.amazon.com/translate/home?region=us-east-1#translation'
+    AllowedPattern: '^https://.*'
+    ConstraintDescription: 'Must be a valid HTTPS URL'
+  
+  ApplicationName:
+    Type: String
+    Description: 'Name for the Lambda function and related resources'
+    Default: 'iam-identity-center-redirect-app'
+    AllowedPattern: '^[a-zA-Z0-9-_]+$'
+    ConstraintDescription: 'Must contain only alphanumeric characters, hyphens, and underscores'
+    MinLength: 1
+    MaxLength: 64
+
+Resources:
+  # IAM execution role for Lambda function
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ApplicationName}-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+
+  # Lambda function for redirect functionality
+  RedirectLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ApplicationName}-redirect-function'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          REDIRECT_TARGET_URL: !Ref RedirectTargetURL
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import os
+          import base64
+          from urllib.parse import parse_qs, unquote_plus
+
+          # Configure logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              """
+              Lambda function that handles IAM Identity Center SAML requests and redirects users.
+              
+              This function can handle both direct requests and SAML authentication requests
+              from IAM Identity Center, then redirects users to the configured target URL.
+              
+              Args:
+                  event (dict): API Gateway event object containing request details
+                  context (object): Lambda context object containing runtime information
+                  
+              Returns:
+                  dict: HTTP response with redirect or SAML handling
+              """
+              try:
+                  # Basic validation of event
+                  if event is None:
+                      raise ValueError("Event cannot be None")
+                  
+                  # Log the incoming request for debugging (sanitized)
+                  logger.info("Processing request")
+                  logger.debug(f"Event keys: {list(event.keys()) if isinstance(event, dict) else 'Invalid event type'}")
+                  
+                  # Get target URL from environment variable with fallback
+                  redirect_url = os.environ.get(
+                      'REDIRECT_TARGET_URL', 
+                      'https://us-east-1.console.aws.amazon.com/translate/home?region=us-east-1#translation'
+                  )
+                  
+                  # Validate redirect URL
+                  if not redirect_url or not redirect_url.startswith('https://'):
+                      raise ValueError("Invalid redirect URL configuration")
+                  
+                  # Check if this is a SAML request from IAM Identity Center
+                  http_method = event.get('httpMethod', event.get('requestContext', {}).get('http', {}).get('method', 'GET'))
+                  
+                  if http_method == 'POST':
+                      # Handle SAML POST request from IAM Identity Center
+                      logger.info("Handling SAML POST request")
+                      
+                      # Parse the body to check for SAML request
+                      body = event.get('body', '')
+                      if body:
+                          try:
+                              # Handle both form-encoded and direct body
+                              if event.get('isBase64Encoded', False):
+                                  body = base64.b64decode(body).decode('utf-8')
+                              
+                              # Check if this looks like a SAML request
+                              if 'SAMLRequest' in body or 'saml' in body.lower():
+                                  logger.info("Detected SAML request, redirecting immediately")
+                                  # For a simple redirect app, we'll just redirect instead of processing SAML
+                                  return create_redirect_response(redirect_url)
+                              
+                          except Exception as e:
+                              logger.warning(f"Could not parse POST body: {e}")
+                  
+                  # For all other requests (GET or non-SAML POST), just redirect
+                  logger.info(f"Redirecting to: {redirect_url}")
+                  return create_redirect_response(redirect_url)
+                  
+              except Exception as e:
+                  # Basic error handling for invalid requests
+                  logger.error(f"Error processing request: {str(e)}")
+                  
+                  # Return proper error response for API Gateway
+                  return {
+                      "statusCode": 400,
+                      "headers": {
+                          "Content-Type": "application/json"
+                      },
+                      "body": json.dumps({
+                          "error": "Invalid request",
+                          "message": "Unable to process the redirect request"
+                      })
+                  }
+
+          def create_redirect_response(redirect_url):
+              """Create an HTML response that redirects via JavaScript and meta refresh"""
+              html_content = "<!DOCTYPE html><html><head><title>Redirecting...</title><meta http-equiv=\"refresh\" content=\"0;url=" + redirect_url + "\"><script type=\"text/javascript\">window.location.href = \"" + redirect_url + "\";</script></head><body><p>Redirecting to AWS Translate Console...</p><p>If you are not redirected automatically, <a href=\"" + redirect_url + "\">click here</a>.</p></body></html>"
+              
+              return {
+                  "statusCode": 200,
+                  "headers": {
+                      "Content-Type": "text/html; charset=utf-8",
+                      "Cache-Control": "no-cache, no-store, must-revalidate"
+                  },
+                  "body": html_content
+              }
+      Tags:
+        - Key: Application
+          Value: !Ref ApplicationName
+
+  # Permission for API Gateway to invoke Lambda function
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RedirectLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RedirectApiGateway}/*/*'
+
+  # API Gateway HTTP API
+  RedirectApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${ApplicationName}-api'
+      Description: 'API Gateway for IAM Identity Center redirect application'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowCredentials: false
+        AllowHeaders:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+        AllowOrigins:
+          - '*'
+      Tags:
+        Application: !Ref ApplicationName
+
+  # API Gateway integration with Lambda
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref RedirectApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RedirectLambdaFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  # API Gateway route for root path (GET)
+  RootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref RedirectApiGateway
+      RouteKey: 'GET /'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # API Gateway route for SAML POST requests
+  PostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref RedirectApiGateway
+      RouteKey: 'POST /'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # API Gateway route for all other requests
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref RedirectApiGateway
+      RouteKey: '$default'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  # API Gateway stage
+  ApiGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref RedirectApiGateway
+      StageName: '$default'
+      AutoDeploy: true
+      Tags:
+        Application: !Ref ApplicationName
+
+Outputs:
+  ApiGatewayEndpointURL:
+    Description: 'API Gateway endpoint URL for IAM Identity Center integration'
+    Value: !GetAtt RedirectApiGateway.ApiEndpoint
+    Export:
+      Name: !Sub '${ApplicationName}-api-endpoint'
+  
+  LambdaFunctionArn:
+    Description: 'ARN of the Lambda function'
+    Value: !GetAtt RedirectLambdaFunction.Arn
+    Export:
+      Name: !Sub '${ApplicationName}-lambda-arn'
+  
+  LambdaFunctionName:
+    Description: 'Name of the Lambda function'
+    Value: !Ref RedirectLambdaFunction
+    Export:
+      Name: !Sub '${ApplicationName}-lambda-name'

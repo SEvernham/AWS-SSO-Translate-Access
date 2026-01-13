@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Portable AWS Translate Simple Access Solution - Deploy one-click AWS Translate access through IAM Identity Center'
+
+Parameters:
+  IdentityCenterInstanceArn:
+    Type: String
+    Description: 'IAM Identity Center instance ARN (find in IAM Identity Center console under Settings)'
+    AllowedPattern: '^arn:aws:sso:::instance/ssoins-[a-zA-Z0-9]+$'
+    ConstraintDescription: 'Must be a valid IAM Identity Center instance ARN (e.g., arn:aws:sso:::instance/ssoins-7223a42a5123aab4)'
+
+  WorkloadAccountId:
+    Type: String
+    Description: 'AWS Account ID where users will access AWS Translate (12-digit account ID)'
+    AllowedPattern: '^[0-9]{12}$'
+    ConstraintDescription: 'Must be a valid 12-digit AWS account ID (e.g., 123456789012)'
+    MinLength: 12
+    MaxLength: 12
+  
+  PermissionSetName:
+    Type: String
+    Default: 'TranslateUserAccess'
+    Description: 'Name for the permission set (appears in user portal and AWS console)'
+    MinLength: 1
+    MaxLength: 32
+    AllowedPattern: '^[a-zA-Z0-9+=,.@_-]+'
+    ConstraintDescription: 'Must contain only alphanumeric characters and +=,.@_- symbols'
+  
+  SessionDuration:
+    Type: String
+    Default: 'PT8H'
+    Description: 'How long users can stay logged in (PT8H = 8 hours = standard business day)'
+    AllowedValues:
+      - 'PT1H'   # 1 hour
+      - 'PT2H'   # 2 hours
+      - 'PT4H'   # 4 hours
+      - 'PT8H'   # 8 hours (default - business day)
+      - 'PT12H'  # 12 hours
+    ConstraintDescription: 'Must be a valid ISO 8601 duration (PT1H, PT2H, PT4H, PT8H, or PT12H)'
+  
+  OrganizationName:
+    Type: String
+    Default: 'YourOrganization'
+    Description: 'Your organization name (used in descriptions and resource tags for identification)'
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: '^[a-zA-Z0-9\s\-_.]+'
+    ConstraintDescription: 'Must contain only alphanumeric characters, spaces, hyphens, underscores, and periods'
+  
+  PermissionSetDescription:
+    Type: String
+    Default: 'AWS Translate access for organization users'
+    Description: 'Description for the permission set (appears in IAM Identity Center console)'
+    MinLength: 1
+    MaxLength: 700
+    ConstraintDescription: 'Must be between 1 and 700 characters'
+
+Resources:
+  # The main permission set for AWS Translate access
+  TranslatePermissionSet:
+    Type: AWS::SSO::PermissionSet
+    Properties:
+      InstanceArn: !Ref IdentityCenterInstanceArn
+      Name: !Ref PermissionSetName
+      Description: !Sub '${PermissionSetDescription} - ${OrganizationName}'
+      SessionDuration: !Ref SessionDuration
+      ManagedPolicies:
+        - 'arn:aws:iam::aws:policy/TranslateReadOnly'
+      InlinePolicy: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "TranslateFullAccess",
+              "Effect": "Allow",
+              "Action": [
+                "translate:*"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "ConsoleNavigation",
+              "Effect": "Allow",
+              "Action": [
+                "sts:GetCallerIdentity",
+                "ec2:DescribeRegions",
+                "support:DescribeServices"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "S3AccessForTranslateJobs",
+              "Effect": "Allow",
+              "Action": [
+                "s3:CreateBucket",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:ListBucket",
+                "s3:GetBucketLocation",
+                "s3:PutBucketTagging",
+                "s3:GetBucketTagging"
+              ],
+              "Resource": [
+                "arn:aws:s3:::translate-*",
+                "arn:aws:s3:::translate-*/*"
+              ]
+            },
+            {
+              "Sid": "IAMPassRoleForTranslate",
+              "Effect": "Allow",
+              "Action": [
+                "iam:PassRole"
+              ],
+              "Resource": "arn:aws:iam::${WorkloadAccountId}:role/*TranslateServiceRole*",
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "translate.amazonaws.com"
+                }
+              }
+            },
+            {
+              "Sid": "CloudWatchLogsForTranslate",
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams"
+              ],
+              "Resource": "arn:aws:logs:*:${WorkloadAccountId}:log-group:/aws/translate/*"
+            }
+          ]
+        }
+      Tags:
+        - Key: 'Solution'
+          Value: 'AWS-Translate-Simple-Access'
+        - Key: 'Organization'
+          Value: !Ref OrganizationName
+        - Key: 'Purpose'
+          Value: 'Translate-User-Access'
+        - Key: 'WorkloadAccount'
+          Value: !Ref WorkloadAccountId
+
+Outputs:
+  PermissionSetArn:
+    Description: 'ARN of the created permission set - use this for account assignments'
+    Value: !GetAtt TranslatePermissionSet.PermissionSetArn
+    Export:
+      Name: !Sub '${AWS::StackName}-PermissionSetArn'
+  
+  PermissionSetName:
+    Description: 'Name of the permission set for user assignment in IAM Identity Center'
+    Value: !Ref PermissionSetName
+    Export:
+      Name: !Sub '${AWS::StackName}-PermissionSetName'
+  
+  IdentityCenterInstanceArn:
+    Description: 'IAM Identity Center instance ARN used for this deployment'
+    Value: !Ref IdentityCenterInstanceArn
+    Export:
+      Name: !Sub '${AWS::StackName}-IdentityCenterInstanceArn'
+  
+  WorkloadAccountId:
+    Description: 'Target AWS account ID where users will access AWS Translate'
+    Value: !Ref WorkloadAccountId
+  
+  OrganizationName:
+    Description: 'Organization name used for tagging and identification'
+    Value: !Ref OrganizationName
+  
+  NextStepsDocumentation:
+    Description: 'Link to post-deployment setup instructions'
+    Value: 'https://github.com/your-org/aws-translate-simple-access/blob/main/docs/post-deployment-setup.md'
+  
+  IdentityCenterConsoleUrl:
+    Description: 'Direct link to IAM Identity Center console for user assignment'
+    Value: 'https://console.aws.amazon.com/singlesignon/home'
+  
+  DeploymentSummary:
+    Description: 'Summary of what was deployed'
+    Value: !Sub 'Successfully created ${PermissionSetName} permission set for ${OrganizationName} in account ${AWS::AccountId} targeting workload account ${WorkloadAccountId}'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "IAM Identity Center Configuration"
+        Parameters:
+          - IdentityCenterInstanceArn
+      - Label:
+          default: "Organization Configuration"
+        Parameters:
+          - OrganizationName
+          - WorkloadAccountId
+      - Label:
+          default: "Permission Set Configuration"
+        Parameters:
+          - PermissionSetName
+          - PermissionSetDescription
+          - SessionDuration
+    ParameterLabels:
+      IdentityCenterInstanceArn:
+        default: "IAM Identity Center Instance ARN"
+      OrganizationName:
+        default: "Organization Name"
+      WorkloadAccountId:
+        default: "Target AWS Account ID"
+      PermissionSetName:
+        default: "Permission Set Name"
+      PermissionSetDescription:
+        default: "Permission Set Description"
+      SessionDuration:
+        default: "User Session Duration"
